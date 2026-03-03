@@ -12,8 +12,7 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
-# Copy application code and env vars
-COPY .env ./
+# Copy application code (env vars come from AgentCore runtime config)
 COPY src/ src/
 
 # To include the frontend, build it first (cd frontend && npm run build)
