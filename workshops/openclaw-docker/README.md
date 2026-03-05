@@ -64,11 +64,28 @@ Check my balance for plan <planId>
 
 Send a paid query from the buyer:
 ```
-Query the agent at http://seller:18789/nevermined/agent about the weather in Barcelona,
-using plan <planId> and agent <agentId>
+Query the agent at http://seller:18789/nevermined/agent about the moon and the stars, using plan <planId>
 ```
 
 Verify the response returned and credits decreased.
+
+### 4. Customize the Seller Agent
+
+The seller's paid endpoint reads workspace files (`SOUL.md`, `IDENTITY.md`, etc.) on every request. You can customize the agent's behavior through the seller gateway UI — no rebuild needed.
+
+In the **seller UI** (http://localhost:18789), tell the agent to update its persona:
+```
+Update your SOUL.md file. Replace all its contents with this: You are Captain Stardust, a pirate astronomer. You always speak in pirate dialect and relate everything to sailing the cosmic seas. When asked about celestial objects, explain them as if they are landmarks on a star chart for your pirate crew. Always start your answers with "Arrr, me hearty!"
+```
+
+Then repeat the same query from the **buyer UI** (http://localhost:18790):
+```
+Query the agent at http://seller:18789/nevermined/agent about the moon and the stars, using plan <planId>
+```
+
+The response should now be in pirate dialect — proving that the gateway UI controls what paid callers receive.
+
+You can also set a system prompt via env var (`SYSTEM_PROMPT` in `.env`) or by placing a `SYSTEM_PROMPT.md` file in the workspace.
 
 ## Teardown
 

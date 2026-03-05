@@ -15,11 +15,16 @@ src = src.replace(
   'const handler = agentHandler ?? mockWeatherHandler;',
   `const handler = agentHandler ?? async function localAgentHandler({ prompt }) {
     const http = require('http');
+    const fs = require('fs');
     const token = 'demo';
-    const postData = JSON.stringify({
-      model: 'openai/gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-    });
+    let systemPrompt = '';
+    try {
+      systemPrompt = fs.readFileSync('/root/.openclaw/workspace/SOUL.md', 'utf8').trim();
+    } catch {}
+    const messages = [];
+    if (systemPrompt) messages.push({ role: 'system', content: 'IMPORTANT — You MUST follow these instructions exactly:\\n\\n' + systemPrompt });
+    messages.push({ role: 'user', content: prompt });
+    const postData = JSON.stringify({ model: 'openai/gpt-4o-mini', messages });
     return new Promise((resolve, reject) => {
       const req = http.request({
         hostname: '127.0.0.1',

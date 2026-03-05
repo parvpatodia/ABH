@@ -15,6 +15,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - NVM_SELLER_API_KEY=${NVM_SELLER_API_KEY:-}
       - NVM_PLAN_ID=${NVM_PLAN_ID:-}
+      - SYSTEM_PROMPT=${SYSTEM_PROMPT:-}
     volumes:
       - seller-config:/root/.openclaw
     restart: unless-stopped
