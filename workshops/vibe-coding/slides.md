@@ -208,7 +208,7 @@ Pro tip for the hackathon: if the WiFi goes down, the skill still works. It's lo
 3. **+ New API Key** → Copy (starts with `sandbox:`)
 
 ### 2. Create a Payment Plan
-1. **My Agents** → **New Agent** → Fill metadata
+1. **Plans** → **New Pricing Plan** → Fill metadata
 2. Create a **credit-based plan** (e.g. 100 credits for 1 USDC)
 3. Copy the **Plan ID**
 
@@ -466,8 +466,8 @@ Now it's your turn. Install the skill and MCP server — takes 60 seconds. Pick 
 
 | | |
 |---|---|
-| Nevermined Docs | docs.nevermined.app |
-| AI Skill Guide | nevermined.ai/docs/development-guide/build-using-nvm-skill |
-| MCP Server | docs.nevermined.app/mcp |
-| Hackathon Kits | `starter-kits/` in this repo |
-| Discord | discord.com/invite/GZju2qScKq |
+| Nevermined Docs | [nevermined.ai/docs](https://nevermined.ai/docs) |
+| AI Skill Guide | [nevermined.ai/docs/development-guide/build-using-nvm-skill](https://nevermined.ai/docs/development-guide/build-using-nvm-skill) |
+| MCP Server | [docs.nevermined.app/mcp](https://docs.nevermined.app/mcp) |
+| Example Agents | [github.com/nevermined-io/hackathons/agents](https://github.com/nevermined-io/hackathons/tree/main/agents) |
+| Discord | [discord.com/invite/GZju2qScKq](https://discord.com/invite/GZju2qScKq) |
