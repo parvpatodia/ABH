@@ -7,10 +7,16 @@ The middleware handles 402 responses, token verification, and credit settlement.
 
 import os
 import uvicorn
+from dotenv import load_dotenv
+import urllib3
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from payments_py import Payments, PaymentOptions
 from payments_py.x402.fastapi import PaymentMiddleware
+
+load_dotenv()
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 payments = Payments.get_instance(
     PaymentOptions(
@@ -43,6 +49,6 @@ async def ask(body: AskRequest):
 
 
 if __name__ == "__main__":
-    print("Protected server running on http://localhost:3000")
+    print("Protected server running on http://localhost:4000")
     print(f"Plan ID: {PLAN_ID}")
-    uvicorn.run(app, host="0.0.0.0", port=3000)
+    uvicorn.run(app, host="0.0.0.0", port=4000)

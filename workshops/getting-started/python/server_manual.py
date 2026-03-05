@@ -7,14 +7,20 @@ Use this when you need full control over the payment flow.
 
 import base64
 import os
+import urllib3
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
 from payments_py import Payments, PaymentOptions
 from payments_py.x402.helpers import build_payment_required
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+load_dotenv()
 
 payments = Payments.get_instance(
     PaymentOptions(
@@ -58,11 +64,17 @@ async def ask(request: Request, body: AskRequest):
         )
 
     # Step 1: Verify (does NOT burn credits)
-    verification = payments.facilitator.verify_permissions(
-        payment_required=payment_required,
-        x402_access_token=token,
-        max_amount="1",
-    )
+    try:
+        verification = payments.facilitator.verify_permissions(
+            payment_required=payment_required,
+            x402_access_token=token,
+            max_amount="1",
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=402,
+            content={"error": f"Token verification failed: {e}"},
+        )
 
     if not verification.is_valid:
         return JSONResponse(
@@ -84,5 +96,5 @@ async def ask(request: Request, body: AskRequest):
 
 
 if __name__ == "__main__":
-    print("Server (manual verification) running on http://localhost:3000")
-    uvicorn.run(app, host="0.0.0.0", port=3000)
+    print("Server (manual verification) running on http://localhost:4000")
+    uvicorn.run(app, host="0.0.0.0", port=4000)
