@@ -30,6 +30,12 @@ style: |
     grid-template-columns: 1fr 1fr;
     gap: 1.5em;
   }
+  section.diagram img {
+    display: block;
+    margin: 0 auto;
+    max-height: 480px;
+    width: auto;
+  }
 ---
 
 <!-- _class: title -->
@@ -91,40 +97,11 @@ x402 finally gives it a purpose. When a server returns 402, it's saying: "I know
 
 ---
 
+<!-- _class: diagram -->
+
 # The x402 Flow
 
-```
- Buyer                         Seller                      Nevermined
-   │                              │                            │
-   │  1. POST /ask                │                            │
-   │  (no payment header)         │                            │
-   │─────────────────────────────>│                            │
-   │                              │                            │
-   │  2. HTTP 402                 │                            │
-   │  Header: payment-required    │                            │
-   │  (planId, scheme, credits)   │                            │
-   │<─────────────────────────────│                            │
-   │                              │                            │
-   │  3. Get x402 token           │                            │
-   │─────────────────────────────────────────────────────────>│
-   │  4. Access token             │                            │
-   │<─────────────────────────────────────────────────────────│
-   │                              │                            │
-   │  5. POST /ask                │                            │
-   │  Header: payment-signature   │                            │
-   │─────────────────────────────>│                            │
-   │                              │  6. Verify ──────────────>│
-   │                              │  7. Valid ✓ <─────────────│
-   │                              │                            │
-   │                              │  [execute business logic]  │
-   │                              │                            │
-   │                              │  8. Settle (burn credits)─>│
-   │                              │  9. Receipt <──────────────│
-   │                              │                            │
-   │  10. HTTP 200                │                            │
-   │  Header: payment-response    │                            │
-   │<─────────────────────────────│                            │
-```
+![x402 Flow](x402-flow.svg)
 
 <!--
 Here's the full flow. Walk through each step:
@@ -152,7 +129,13 @@ All standard HTTP. No WebSockets, no special protocols.
 | `payment-signature` | Client → Server | Retry request | Proof of payment |
 | `payment-response` | Server → Client | 200 response | Settlement receipt |
 
-### Decoded `payment-required` example:
+<!--
+Three headers. That's the entire protocol surface. The payment-required header is base64-encoded JSON telling the client what to pay.
+-->
+
+---
+
+# Decoded `payment-required` Header
 
 ```json
 {
@@ -167,12 +150,10 @@ All standard HTTP. No WebSockets, no special protocols.
 }
 ```
 
+The `accepts` array can list **multiple schemes** — an agent can have multiple plans (e.g. one crypto, one fiat). The client picks the one it prefers.
+
 <!--
-Three headers. That's the entire protocol surface.
-
-The payment-required header is the most interesting one. It's a base64-encoded JSON object that tells the client everything it needs to know: the protocol version, what resource costs money, and what payment schemes are accepted.
-
-Notice the "accepts" array — it can list multiple schemes. A plan could accept both crypto and fiat. The client picks the one it prefers.
+This is the decoded payment-required header. It tells the client the protocol version, what resource costs money, and what payment schemes are accepted. Notice the accepts array — it can list multiple schemes.
 -->
 
 ---
@@ -225,9 +206,9 @@ Let's see the crypto flow in action. I have an agent running with x402 middlewar
 
 ### 1. Call without payment → 402
 ```bash
-curl -X POST http://localhost:8000/ask \
+curl -X POST http://localhost:3000/ask \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is quantum computing?"}' -v
+  -d '{"query": "AI trends 2026"}' -v
 ```
 
 ### 2. Decode the payment-required header
@@ -236,15 +217,27 @@ echo "<base64>" | base64 -d | python -m json.tool
 # → scheme: "nvm:erc4337", network: "eip155:84532"
 ```
 
+---
+
+# Crypto Flow — Client Output
+
 ### 3. Run client (full flow)
 ```bash
 poetry run python -m src.client
 ```
 ```
-Calling /ask without token... 402 ✗
-Generating x402 access token...
-Retrying with payment-signature header...
-200 OK ✓  Credits used: 1  Remaining: 99
+POST /ask (no token)   -> 402 Payment Required
+Generated access token -> Using Nevermined SDK
+POST /ask (with token) -> 200 OK
+
+Settlement (payment-response header):
+{
+  "status": "settled",
+  "creditsUsed": 1,
+  "remainingCredits": 99,
+  "txHash": "0xabc...def",
+  "network": "eip155:84532"
+}
 ```
 
 <!--
@@ -259,31 +252,11 @@ Let me show you this transaction on the Nevermined dashboard and Base Sepolia ex
 
 ---
 
+<!-- _class: diagram -->
+
 # Two Schemes, One Protocol
 
-```
-                      x402 Protocol
-                    ┌──────────────┐
-                    │  Same HTTP   │
-                    │ Same headers │
-                    │  Same SDK   │
-                    │  Same code  │
-                    └──────┬──────┘
-                           │
-               ┌───────────┴───────────┐
-               │                       │
-     ┌─────────▼──────────┐  ┌─────────▼──────────┐
-     │    nvm:erc4337      │  │ nvm:card-delegation │
-     │                     │  │                     │
-     │  On-chain credits   │  │  Stripe credit card │
-     │  ERC-1155 on Base   │  │  Auto-recharge      │
-     │  Crypto wallets     │  │  USD payments        │
-     │  Instant settlement │  │  Familiar to users   │
-     └────────────────────┘  └─────────────────────┘
-```
-
-**Key insight: the seller's code doesn't change.**
-The middleware is identical for both schemes.
+![Two Schemes](two-schemes.svg)
 
 <!--
 Here's the big reveal of this workshop. x402 supports two payment schemes, but the protocol — the HTTP headers, the flow, the SDK calls — is exactly the same.
@@ -373,21 +346,17 @@ Now let's see the fiat flow. Same agent, same code — I just point it to a fiat
 ### Same agent, different plan
 
 ```python
-# Auto-detect scheme from plan metadata
-scheme = resolve_scheme(payments, plan_id)
-print(f"Detected scheme: {scheme}")  # "nvm:card-delegation"
+scheme = resolve_scheme(payments, plan_id)  # "nvm:card-delegation"
 
-# List enrolled payment methods
 methods = payments.delegation.list_payment_methods()
-print(f"Card: {methods[0].brand} ending in {methods[0].last4}")
+print(f"Card: {methods[0].brand} *{methods[0].last4}")
 
-# Build token with card delegation
 token_options = X402TokenOptions(
-    scheme="nvm:card-delegation",
+    scheme=scheme,
     delegation_config=CardDelegationConfig(
         provider_payment_method_id=methods[0].id,
-        spending_limit_cents=10_000,   # $100
-        duration_secs=604_800,          # 7 days
+        spending_limit_cents=10_000,  # $100
+        duration_secs=604_800,        # 7 days
         currency="usd",
     ),
 )
@@ -418,26 +387,17 @@ Calling /ask with payment-signature header...
 200 OK ✓  Credits used: 1  Network: stripe
 ```
 
-### In Stripe Dashboard:
+### Behind the scenes:
 ```
-PaymentIntent pi_xxx
-  Amount:    $1.00
-  Status:    Succeeded
-  Customer:  cus_xxx
-  Card:      •••• 4242
-  Metadata:  source=nvm-card-delegation
-             delegationId=del_xxx
+Card charged via Stripe  →  Credits minted on-chain  →  Credits burned (settlement)
 ```
 
-### On-chain:
-Credits minted → then burned (same ERC-1155 as crypto)
+Same ERC-1155 audit trail as crypto — Nevermined handles the Stripe integration transparently.
 
 <!--
 There it is. In the terminal — same 200 OK response, same credits used, but the network says "stripe" instead of a chain ID.
 
-In the Stripe dashboard — a real PaymentIntent, $1.00 charged to the test card ending in 4242. The metadata shows it came from the card delegation system.
-
-And on-chain, credits were minted and then burned. Even with fiat, the on-chain audit trail is maintained. You get the convenience of card payments with the transparency of blockchain settlement.
+Behind the scenes, Nevermined charged the card via Stripe, minted credits on-chain, and burned them. The seller's code didn't change at all. You get the convenience of card payments with the transparency of blockchain settlement — all managed by Nevermined.
 -->
 
 ---
@@ -450,29 +410,19 @@ And on-chain, credits were minted and then burned. Even with fiat, the on-chain 
 ### Python (FastAPI)
 
 ```python
-from payments_py import (
-    Payments, PaymentOptions
-)
-from payments_py.x402.fastapi import (
-    PaymentMiddleware
-)
+from payments_py import Payments, PaymentOptions
+from payments_py.x402.fastapi import PaymentMiddleware
 
-payments = Payments.get_instance(
-    PaymentOptions(
-        nvm_api_key=NVM_API_KEY,
-        environment="sandbox",
-    )
-)
+payments = Payments.get_instance(PaymentOptions(
+    nvm_api_key=NVM_API_KEY,
+    environment="sandbox",
+))
 
-app.add_middleware(
-    PaymentMiddleware,
+app.add_middleware(PaymentMiddleware,
     payments=payments,
-    routes={
-        "POST /ask": {
-            "plan_id": NVM_PLAN_ID,
-            "credits": 1,
-        },
-    },
+    routes={"POST /ask": {
+        "plan_id": NVM_PLAN_ID, "credits": 1,
+    }},
 )
 ```
 
@@ -482,26 +432,20 @@ app.add_middleware(
 ### TypeScript (Express)
 
 ```typescript
-import { Payments }
-  from "@nevermined-io/payments";
+import { Payments } from "@nevermined-io/payments";
 import { paymentMiddleware }
   from "@nevermined-io/payments/express";
 
-const payments =
-  Payments.getInstance({
+const payments = Payments.getInstance({
     nvmApiKey: NVM_API_KEY,
     environment: "sandbox",
-  });
+});
 
-app.use(paymentMiddleware(
-  payments,
-  {
+app.use(paymentMiddleware(payments, {
     "POST /ask": {
-      planId: NVM_PLAN_ID,
-      credits: 1,
+        planId: NVM_PLAN_ID, credits: 1,
     },
-  }
-));
+}));
 ```
 
 </div>
@@ -520,31 +464,18 @@ If you create a crypto plan, it works. If you create a fiat plan, it works. If y
 # The Buyer Adapts (Slightly)
 
 ```python
-from payments_py.x402.resolve_scheme import resolve_scheme
-from payments_py.x402.token_api import X402TokenOptions, CardDelegationConfig
-
-# Auto-detect scheme from plan metadata
-scheme = resolve_scheme(payments, plan_id)
+scheme = resolve_scheme(payments, plan_id)  # auto-detect from plan metadata
 
 if scheme == "nvm:card-delegation":
-    # Fiat — need to specify card delegation
     methods = payments.delegation.list_payment_methods()
-    token_options = X402TokenOptions(
-        scheme=scheme,
+    token_options = X402TokenOptions(scheme=scheme,
         delegation_config=CardDelegationConfig(
             provider_payment_method_id=methods[0].id,
-            spending_limit_cents=10_000,
-            duration_secs=604_800,
-            currency="usd",
-        ),
-    )
+            spending_limit_cents=10_000, duration_secs=604_800, currency="usd"))
 else:
-    # Crypto — no extra config needed
-    token_options = X402TokenOptions(scheme=scheme)
+    token_options = X402TokenOptions(scheme=scheme)  # crypto — nothing extra
 
-# Same call for both!
-token = payments.x402.get_x402_access_token(plan_id,
-    token_options=token_options)
+token = payments.x402.get_x402_access_token(plan_id, token_options=token_options)
 ```
 
 <!--
@@ -557,9 +488,13 @@ And the final call — get_x402_access_token — is the same for both schemes. T
 
 ---
 
+<!-- _class: diagram -->
+
 # Architecture Overview
 
-```
+![Architecture](architecture.svg)
+
+<!-- ```
 ┌────────────────────────────────────────────────────────────┐
 │                    Nevermined Platform                       │
 │                                                             │
@@ -587,7 +522,7 @@ And the final call — get_x402_access_token — is the same for both schemes. T
      │ verify()   │   │           │    │ charge()    │
      │ settle()   │   │           │    │ → mint()    │
      └───────────┘   └───────────┘    └─────────────┘
-```
+``` -->
 
 <!--
 Here's the full architecture. At the top is the Nevermined platform with three services: Plans API for managing subscriptions and balances, Permissions for the x402 token lifecycle (generate, verify, settle), and the Delegation Service for fiat card management.
@@ -629,20 +564,11 @@ For your hackathon projects, I'd recommend starting with crypto on sandbox since
 
 # Key Takeaways
 
-### 1. x402 = HTTP payments via headers
-402 response, `payment-signature` header, settlement receipt
-
-### 2. Two schemes, one protocol
-Crypto (ERC-4337) and fiat (Stripe card delegation)
-
-### 3. Seller code is scheme-agnostic
-One middleware line handles both — zero changes needed
-
-### 4. Buyer adapts slightly for fiat
-`CardDelegationConfig` for fiat, nothing extra for crypto
-
-### 5. Credits are always on-chain
-Even fiat mints ERC-1155 credits before burning — unified audit trail
+1. **x402 = HTTP payments via headers** — 402 response, `payment-signature`, settlement receipt
+2. **Two schemes, one protocol** — crypto (ERC-4337) and fiat (Stripe card delegation)
+3. **Seller code is scheme-agnostic** — one middleware line handles both
+4. **Buyer adapts slightly for fiat** — `CardDelegationConfig` for fiat, nothing extra for crypto
+5. **Credits are always on-chain** — even fiat mints ERC-1155 before burning
 
 <!--
 Let me leave you with these five takeaways. x402 makes payments as simple as HTTP headers. It supports both crypto and fiat through the same protocol. Sellers never write scheme-specific code. Buyers need slightly more setup for fiat. And everything is anchored on-chain for transparency, even card payments.
@@ -652,19 +578,18 @@ Let me leave you with these five takeaways. x402 makes payments as simple as HTT
 
 # Resources
 
-| Resource | Link |
-|----------|------|
-| Nevermined Docs | docs.nevermined.app |
-| Nevermined App | nevermined.app |
-| x402 Protocol Spec | github.com/coinbase/x402 |
-| Payments Python SDK | github.com/nevermined-io/payments-py |
-| Payments TypeScript SDK | github.com/nevermined-io/payments |
-| Stripe Test Cards | docs.stripe.com/testing#cards |
-| AI Skill Install Guide | nevermined.ai/docs/development-guide/build-using-nvm-skill |
-| MCP Server | docs.nevermined.app/mcp |
-| Hackathon Kits | `starter-kits/` in this repo |
-| Discord | discord.com/invite/GZju2qScKq |
+| | |
+|---|---|
+| Nevermined Docs | [nevermined.ai/docs](https://nevermined.ai/docs) |
+| Nevermined App | [nevermined.app](https://nevermined.app) |
+| x402 Protocol Spec | [github.com/coinbase/x402](https://github.com/coinbase/x402) |
+| Payments Python SDK | [github.com/nevermined-io/payments-py](https://github.com/nevermined-io/payments-py) |
+| Payments TypeScript SDK | [github.com/nevermined-io/payments](https://github.com/nevermined-io/payments) |
+| Stripe Test Cards | [docs.stripe.com/testing#cards](https://docs.stripe.com/testing#cards) |
+| Example Agents | [github.com/nevermined-io/hackathons/agents](https://github.com/nevermined-io/hackathons/tree/main/agents) |
+| MCP Server | [docs.nevermined.app/mcp](https://docs.nevermined.app/mcp) |
+| Discord | [discord.com/invite/GZju2qScKq](https://discord.com/invite/GZju2qScKq) |
 
 <!--
-Here are all the resources you'll need. The Nevermined docs have full API references for both SDKs. The starter kits in this repo have README walkthroughs for each hackathon track. And we're available on Discord if you get stuck. Good luck with your projects!
+Here are all the resources you'll need. The Nevermined docs have full API references for both SDKs. The example agents in this repo have working demos for each protocol. And we're available on Discord if you get stuck. Good luck with your projects!
 -->

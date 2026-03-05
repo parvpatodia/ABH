@@ -26,8 +26,8 @@
 - [ ] Two Nevermined accounts ready:
   - **Seller account**: has a registered agent with TWO plans (one crypto, one fiat)
   - **Buyer account**: has credits on the crypto plan + a Stripe test card enrolled for the fiat plan
-- [ ] `agents/seller-simple-agent/` installed and tested (`poetry install` done)
-- [ ] Client script ready for both crypto and fiat flows
+- [ ] `workshops/x402/demo/` installed and tested (`poetry install` done)
+- [ ] Client script ready for both crypto and fiat flows (`workshops/x402/demo/src/client.py`)
 - [ ] Stripe dashboard access (to show PaymentIntents for fiat demo)
 - [ ] Browser tabs ready: nevermined.app (seller view), nevermined.app (buyer view), Stripe dashboard
 - [ ] `.env` configured with all keys
@@ -181,16 +181,16 @@ Emphasize:
 **Setup: Start the seller agent**
 
 ```bash
-# Terminal 1 — start seller agent
-cd agents/seller-simple-agent
+# Terminal 1 — start the demo agent
+cd workshops/x402/demo
 poetry run python -m src.agent
-# Running on http://localhost:8000
+# Running on http://localhost:3000
 ```
 
 **Step 1: Call without payment**
 
 ```bash
-curl -X POST http://localhost:8000/ask \
+curl -X POST http://localhost:3000/ask \
   -H "Content-Type: application/json" \
   -d '{"query": "What is quantum computing?"}' \
   -v 2>&1 | head -30
@@ -215,11 +215,11 @@ poetry run python -m src.client
 ```
 
 Walk through the output:
-1. "Calling /ask without token... got 402"
-2. "Generating x402 access token for plan_xxx..."
-3. "Retrying with payment-signature header..."
-4. "Got 200! Answer: [AI response]"
-5. "Credits used: 1, Remaining: 99"
+1. "Request WITHOUT payment token... 402 Payment Required"
+2. "Resolved scheme: nvm:erc4337"
+3. "Token obtained"
+4. "Retry WITH payment token... 200 OK"
+5. "Settlement Receipt: creditsRedeemed: 1"
 
 **Step 4: Show it on nevermined.app**
 
@@ -320,35 +320,12 @@ Card Delegation Flow:
 **Step 3: Run the fiat client**
 
 ```bash
-# Terminal 2 — run client with fiat plan
+# Terminal 2 — run client with fiat plan (same agent, just swap the plan ID)
+cd workshops/x402/demo
 NVM_PLAN_ID=plan_fiat_xxx poetry run python -m src.client
 ```
 
-Or use a modified client that builds fiat token options:
-
-```python
-from payments_py.x402.token_api import X402TokenOptions, CardDelegationConfig
-
-# Resolve scheme automatically (will detect fiat plan)
-scheme = payments.x402.resolve_scheme(plan_id)
-print(f"Detected scheme: {scheme}")  # "nvm:card-delegation"
-
-# List enrolled payment methods
-methods = payments.delegation.list_payment_methods()
-print(f"Card: {methods[0].brand} ending in {methods[0].last4}")
-
-# Build token with card delegation
-token_options = X402TokenOptions(
-    scheme="nvm:card-delegation",
-    delegation_config=CardDelegationConfig(
-        provider_payment_method_id=methods[0].id,
-        spending_limit_cents=10_000,  # $100
-        duration_secs=604_800,         # 7 days
-        currency="usd",
-    ),
-)
-token = payments.x402.get_x402_access_token(plan_id, token_options=token_options)
-```
+The client auto-detects the scheme via `resolve_scheme()` and builds the `CardDelegationConfig` automatically.
 
 Walk through the output:
 1. "Detected scheme: `nvm:card-delegation`"
@@ -544,6 +521,6 @@ token = payments.x402.get_x402_access_token(plan_id, token_options=token_options
 
 If fiat demo fails (Stripe sandbox issues, card enrollment problems):
 1. **Focus on the crypto demo** — it's more reliable on sandbox
-2. **Show the code diff** — walk through the buyer's `token_options.py` from `agents/buyer-simple-agent/`
+2. **Show the code diff** — walk through the client's `resolve_scheme` + `CardDelegationConfig` from `workshops/x402/demo/src/client.py`
 3. **Show Stripe dashboard screenshots** — pre-captured PaymentIntent screenshots
 4. **Architecture slides** — spend more time on the diagrams and protocol explanation
