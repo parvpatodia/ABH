@@ -1,25 +1,21 @@
 """
-Strands agent definition with Nevermined x402 payment-protected tools.
+Strands agent definition with Nevermined x402 payment protected tools.
 
-This is the heart of the kit. Both agent.py (FastAPI) and agent_agentcore.py
-(AWS) import from here. The tools use plain functions from tools/ modules,
-wrapped with @tool + @requires_payment decorators.
-
-Usage:
-    from src.strands_agent import payments, create_agent, NVM_PLAN_ID
+We sell a routing decision service that tells buyers which provider and model
+to use given task type, budget, objective, and switching constraints.
 """
 
+import json
 import os
+from typing import Any, Dict
 
+import requests
 from dotenv import load_dotenv
 from strands import Agent, tool
 
 from payments_py import Payments, PaymentOptions
 from payments_py.x402.strands import requires_payment
-
-from .tools.market_research import research_market_impl
-from .tools.summarize import summarize_content_impl
-from .tools.web_search import search_web
+from .taskroute_core import route_task as route_task_impl
 
 load_dotenv()
 
@@ -28,14 +24,34 @@ NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
 NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID")
 
+TASKROUTE_URL = os.getenv("TASKROUTE_URL", "http://127.0.0.1:8000/optimize")
+
 payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment=NVM_ENVIRONMENT)
 )
 
 
-# ---------------------------------------------------------------------------
-# Payment-protected Strands tools
-# ---------------------------------------------------------------------------
+def parse_request(query: str) -> Dict[str, Any]:
+    """
+    Buyers can send either JSON or a simple text query.
+    If JSON parse fails, we fall back to a safe default.
+    """
+
+    try:
+        data = json.loads(query)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+
+    return {
+        "task_type": "text_generation",
+        "budget_usd": 0.05,
+        "objective": "balanced",
+        "current_provider": None,
+        "state_tokens": 1200
+    }
+
 
 @tool(context=True)
 @requires_payment(
@@ -44,81 +60,44 @@ payments = Payments.get_instance(
     credits=1,
     agent_id=NVM_AGENT_ID,
 )
-def search_data(query: str, max_results: int = 5, tool_context=None) -> dict:
-    """Search the web for data. Costs 1 credit per request.
-
-    Args:
-        query: The search query to run.
-        max_results: Maximum number of results to return.
+def route_task(query: str, tool_context=None) -> Dict[str, Any]:
     """
-    return search_web(query, max_results)
+    Return a paid routing decision for an agent task. Costs 1 credit per request.
 
-
-@tool(context=True)
-@requires_payment(
-    payments=payments,
-    plan_id=NVM_PLAN_ID,
-    credits=5,
-    agent_id=NVM_AGENT_ID,
-)
-def summarize_data(content: str, focus: str = "key_findings", tool_context=None) -> dict:
-    """Summarize content with LLM-powered analysis. Costs 5 credits per request.
-
-    Args:
-        content: The text content to summarize.
-        focus: Focus area - 'key_findings', 'action_items', 'trends', or 'risks'.
+    Expected input format is JSON string:
+    {
+      "task_type": "image_generation",
+      "budget_usd": 0.1,
+      "objective": "balanced",
+      "current_provider": null,
+      "state_tokens": 1200
+    }
     """
-    return summarize_content_impl(content, focus)
 
+    payload = parse_request(query)
 
-@tool(context=True)
-@requires_payment(
-    payments=payments,
-    plan_id=NVM_PLAN_ID,
-    credits=10,
-    agent_id=NVM_AGENT_ID,
-)
-def research_data(query: str, depth: str = "standard", tool_context=None) -> dict:
-    """Conduct full market research with a multi-source report. Costs 10 credits per request.
+    r = requests.post(TASKROUTE_URL, json=payload, timeout=20)
+    r.raise_for_status()
+    #return r.json()
+    return route_task_impl(payload)
 
-    Args:
-        query: The research topic or question.
-        depth: Research depth - 'standard' or 'deep'.
-    """
-    return research_market_impl(query, depth)
-
-
-# ---------------------------------------------------------------------------
-# Agent factory
-# ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are a data selling agent. You provide data services at three pricing tiers:
+You are a routing decision selling agent.
 
-1. **search_data** (1 credit) - Basic web search. Use this for quick lookups.
-2. **summarize_data** (5 credits) - LLM-powered content summarization. Use this \
-when the user wants analysis of specific content.
-3. **research_data** (10 credits) - Full market research report. Use this for \
-comprehensive research questions.
+Your job is simple:
+Take the user input, call route_task, and return the routing plan.
 
-Choose the appropriate tool based on the user's request complexity. If the user \
-asks for a simple search, use search_data. If they want analysis or summary, use \
-summarize_data. For in-depth research, use research_data.
+The routing plan tells the buyer which provider and model to use, including
+cost, switching cost, and risk tradeoffs.
 
-Always be helpful and explain what data you found."""
+Always use the route_task tool for every request.
+"""
 
-TOOLS = [search_data, summarize_data, research_data]
+TOOLS = [route_task]
 
 
 def create_agent(model) -> Agent:
-    """Create a Strands agent with the given model.
-
-    Args:
-        model: A Strands-compatible model (OpenAIModel, BedrockModel, etc.)
-
-    Returns:
-        Configured Strands Agent with payment-protected tools.
-    """
     return Agent(
         model=model,
         tools=TOOLS,
