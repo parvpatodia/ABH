@@ -1,118 +1,103 @@
 # Nevermined AI Agent Examples
 
-Working examples of AI agents with [Nevermined](https://nevermined.app) payment integration. Each agent demonstrates a different protocol (x402, A2A, MCP) and can be run locally with a few commands.
+Examples of AI agents that use [Nevermined](https://nevermined.app) for payments. Each one shows a different way to gate access: x402 over HTTP, A2A, or MCP. You can run them locally with the commands below.
 
-## Quick Start
-
-### Prerequisites
+## What you need
 
 - Python 3.10+
-- [Poetry](https://python-poetry.org/) for dependency management
-- [Nevermined App](https://nevermined.app) account (API key + payment plan)
-- OpenAI API key (or other LLM provider)
+- [Poetry](https://python-poetry.org/) (or use pip and install deps from each agent’s `pyproject.toml`)
+- A [Nevermined App](https://nevermined.app) account: you’ll need an API key and a payment plan (plan ID).
+- An OpenAI API key for the LLM-backed agents.
 
-### Environment Setup
+## Env setup
 
-Each agent has its own `.env.example`. Copy and fill it in:
+Each agent lives in its own folder and expects a `.env` there. If the repo has a `.env.example`, copy it to `.env` and fill in values. Typical vars:
 
-```bash
-cd agents/<agent-name>
-cp .env.example .env
-# Edit .env with your credentials
-```
-
-Key variables:
-
-```bash
-NVM_API_KEY=sandbox:your-api-key       # From https://nevermined.app > API Keys
-NVM_ENVIRONMENT=sandbox                # sandbox, staging_sandbox, or live
-NVM_PLAN_ID=your-plan-id              # Create in Nevermined App > My Pricing Plans
-OPENAI_API_KEY=sk-your-key            # For LLM-powered agents
-```
+- `NVM_API_KEY` — from Nevermined App → API Keys (sandbox keys start with `sandbox:`, live with `live:`).
+- `NVM_ENVIRONMENT` — `sandbox`, `staging_sandbox`, or `live`.
+- `NVM_PLAN_ID` — from creating a pricing plan in Nevermined (credit-based, time-based, or trial).
+- `OPENAI_API_KEY` — for any agent that calls an LLM.
 
 ## Agents
 
-| Agent | Description | Protocols | Link |
-|-------|-------------|-----------|------|
-| **Buyer Agent** | Discovers sellers, purchases data, tracks spending | x402, A2A | [README](./agents/buyer-simple-agent/) |
-| **Seller Agent** | Sells data/services with tiered pricing | x402, A2A | [README](./agents/seller-simple-agent/) |
-| **MCP Server** | Payment-protected tools via MCP protocol | MCP, x402 | [README](./agents/mcp-server-agent/) |
-| **Strands Agent** | Strands SDK agent with payment-protected tools | x402 | [README](./agents/strands-simple-agent/) |
+| Agent | What it does | Protocols |
+|-------|----------------|-----------|
+| **Buyer** | Finds sellers (A2A), buys data, respects budget | x402, A2A |
+| **Seller** | Sells data / routing decisions; tiered pricing, 1 credit per call on paid tools | x402, A2A |
+| **MCP Server** | Exposes payment-protected tools over MCP | MCP, x402 |
+| **Strands** | Single Strands SDK agent with `@requires_payment` tools | x402 |
 
-### Buyer Agent (`agents/buyer-simple-agent/`)
+### Buyer (`agents/buyer-simple-agent/`)
 
-Discovers sellers in an A2A marketplace, purchases data autonomously, and tracks spending with budget limits. Includes a React web frontend for interactive use.
+Discovers sellers via A2A, pays for data, tracks spend. Has a React frontend.
 
 ```bash
 cd agents/buyer-simple-agent
 poetry install
-poetry run python -m src.agent          # Interactive CLI (A2A mode)
-poetry run python -m src.web            # Web server + React frontend
+poetry run python -m src.agent    # CLI, A2A
+poetry run python -m src.web      # backend + React UI
 ```
 
-### Seller Agent (`agents/seller-simple-agent/`)
+### Seller (`agents/seller-simple-agent/`)
 
-Sells data and services with tiered pricing (1, 5, 10 credits). Supports both HTTP (x402 middleware) and A2A modes with auto-registration to buyer marketplaces.
+Sells a routing decision: given `task_type`, `budget_usd`, `objective`, and optional `current_provider` / `state_tokens`, it returns a ranked list of provider/model options with effective price, switching cost, and risk. Payment is 1 credit per request via x402.
+
+- **POST /data** — Body: `{"query": "<json string>"}`. The JSON can be something like `{"task_type":"image_generation","budget_usd":0.1,"objective":"balanced"}`. Send a valid x402 token in the `payment-signature` header or you get **402 Payment Required** and a `payment-required` header (base64-encoded payload).
+- **GET /pricing** — Plan ID and pricing tiers (no auth).
+- **GET /stats** — Usage analytics (no auth).
+- **GET /health** — Liveness.
+
+The Strands tool `route_task` is wrapped with `@requires_payment`; settlement is handled by the payments SDK and we read `credits_redeemed` from the invocation state for stats.
 
 ```bash
 cd agents/seller-simple-agent
 poetry install
-poetry run python -m src.agent          # HTTP server (x402)
-poetry run python -m src.agent_a2a      # A2A server
+poetry run python -m src.agent      # HTTP server (x402)
+poetry run python -m src.agent_a2a # A2A server
 ```
 
-### MCP Server Agent (`agents/mcp-server-agent/`)
+### MCP Server (`agents/mcp-server-agent/`)
 
-MCP server with payment-protected tools (search, summarize, research). Includes a setup script that programmatically registers the agent and creates a payment plan.
+MCP server with paid tools (e.g. search, summarize, research). Run `src.setup` once to register the agent and create a plan; then start the server.
 
 ```bash
 cd agents/mcp-server-agent
 poetry install
-poetry run python -m src.setup          # Register agent + create plan
-poetry run python -m src.server         # Start MCP server (port 3000)
+poetry run python -m src.setup
+poetry run python -m src.server   # port 3000
 ```
 
-### Strands Agent (`agents/strands-simple-agent/`)
+### Strands (`agents/strands-simple-agent/`)
 
-Strands SDK agent with x402 payment-protected tools and full payment discovery flow. Demonstrates the `@requires_payment` decorator pattern.
+Strands agent with x402-protected tools and the full payment flow (402 → token → settlement).
 
 ```bash
 cd agents/strands-simple-agent
 poetry install
-poetry run python agent.py              # Run agent
-poetry run python demo.py               # Run demo
+poetry run python agent.py
+poetry run python demo.py
 ```
 
-## Protocols
+## Protocols (short version)
 
-### x402 (HTTP Payment Protocol)
+- **x402** — Payment over HTTP. Client sends `payment-signature` with an access token. If missing or invalid, server responds **402** and sets `payment-required` (base64 JSON). After payment, server returns 200 and the client can read settlement info (e.g. credits redeemed) from the response or from the SDK’s invocation state.
+- **A2A** — Agent discovery via `/.well-known/agent.json`, JSON-RPC with payment extensions. Sellers can register with buyer marketplaces.
+- **MCP** — Tools/plugins behind logical URLs; each tool can have its own credit cost.
 
-Payment negotiation via HTTP headers. The client sends a `payment-signature` header with an access token. If missing, the server returns `402 Payment Required` with a `payment-required` header describing what's needed.
+## Docs in this repo
 
-### A2A (Agent-to-Agent)
+- [Getting Started](./docs/getting-started.md)
+- [AWS Integration](./docs/aws-integration.md) — Strands + AgentCore
+- [Deploy to AgentCore](./docs/deploy-to-agentcore.md)
 
-Standard agent discovery via `/.well-known/agent.json` and JSON-RPC messaging with payment extensions. Agents can auto-register with buyer marketplaces.
+## Links
 
-### MCP (Model Context Protocol)
-
-Tool/plugin monetization with logical URLs (e.g., `mcp://server/tools/search`). Each tool can have independent credit pricing.
-
-## Documentation
-
-- [Getting Started](./docs/getting-started.md) — Environment setup and first agent
-- [AWS Integration](./docs/aws-integration.md) — Strands SDK + AgentCore deployment
-- [Deploy to AgentCore](./docs/deploy-to-agentcore.md) — Step-by-step AgentCore deployment with Nevermined payments
-
-## Resources
-
-- [Nevermined Documentation](https://nevermined.ai/docs)
+- [Nevermined docs](https://nevermined.ai/docs)
 - [Nevermined App](https://nevermined.app)
-- [Payments Python SDK](https://github.com/nevermined-io/payments-py)
-- [Payments TypeScript SDK](https://github.com/nevermined-io/payments)
-- [x402 Protocol Spec](https://github.com/coinbase/x402)
-- [AWS AgentCore Samples](https://github.com/awslabs/amazon-bedrock-agentcore-samples)
-- [Discord Community](https://discord.com/invite/GZju2qScKq)
+- [payments-py](https://github.com/nevermined-io/payments-py)
+- [payments (TypeScript)](https://github.com/nevermined-io/payments)
+- [x402 spec](https://github.com/coinbase/x402)
+- [AWS AgentCore samples](https://github.com/awslabs/amazon-bedrock-agentcore-samples)
+- [Discord](https://discord.com/invite/GZju2qScKq)
 
-## License
-
-MIT
+License: MIT
