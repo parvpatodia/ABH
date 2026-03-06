@@ -1,0 +1,64 @@
+{
+    "items": [
+      {
+        "provider": "openai",
+        "name": "gpt-4o-mini",
+        "task_types": ["text_generation"],
+        "price": 0.0006,
+        "price_unit": "per_1k_tokens_usd",
+        "latency": "fast",
+        "quality": 7,
+        "reliability": 0.98
+      },
+      {
+        "provider": "openai",
+        "name": "gpt-4.1",
+        "task_types": ["text_generation"],
+        "price": 0.01,
+        "price_unit": "per_1k_tokens_usd",
+        "latency": "medium",
+        "quality": 9,
+        "reliability": 0.98
+      },
+      {
+        "provider": "replicate",
+        "name": "sdxl",
+        "task_types": ["image_generation"],
+        "price": 0.01,
+        "price_unit": "per_image_usd",
+        "latency": "medium",
+        "quality": 7,
+        "reliability": 0.94
+      },
+      {
+        "provider": "openai",
+        "name": "dall-e",
+        "task_types": ["image_generation"],
+        "price": 0.04,
+        "price_unit": "per_image_usd",
+        "latency": "fast",
+        "quality": 9,
+        "reliability": 0.97
+      },
+      {
+        "provider": "aws",
+        "name": "batch-transform",
+        "task_types": ["data_processing"],
+        "price": 0.002,
+        "price_unit": "per_job_usd",
+        "latency": "fast",
+        "quality": 6,
+        "reliability": 0.97
+      },
+      {
+        "provider": "databricks",
+        "name": "spark-job",
+        "task_types": ["data_processing"],
+        "price": 0.003,
+        "price_unit": "per_job_usd",
+        "latency": "medium",
+        "quality": 7,
+        "reliability": 0.95
+      }
+    ]
+  }
